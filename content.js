@@ -65,7 +65,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        cursor: pointer;
+        cursor: grab;
         color: #fff;
         box-shadow: 0 4px 22px rgba(0,0,0,0.5);
         transition: transform .18s, background .18s, box-shadow .18s;
@@ -73,6 +73,7 @@
       }
       #fab:hover { background: rgba(36,36,44,0.94); transform: scale(1.1); box-shadow: 0 6px 30px rgba(0,0,0,0.6); }
       #fab.active { background: rgba(60,100,230,0.88); transform: scale(1.06); }
+      #fab.dragging { cursor: grabbing !important; transition: none !important; transform: scale(1.08) !important; }
       #fab svg { width: 23px; height: 23px; display: block; }
 
       /* ── Панель ── */
@@ -231,6 +232,63 @@
     let open = false;
     let selected = new Set();
 
+    // ─── Drag-to-move ───────────────────────────────────────────────────────────
+    let isDragging = false;
+    let wasDragged = false;
+    let dragStartX, dragStartY, wrapStartLeft, wrapStartTop;
+
+    // Восстанавливаем последнюю позицию
+    try {
+      const saved = JSON.parse(localStorage.getItem('su-pos'));
+      if (saved) {
+        wrap.style.left   = Math.min(saved.left, window.innerWidth  - 60) + 'px';
+        wrap.style.top    = Math.min(saved.top,  window.innerHeight - 60) + 'px';
+        wrap.style.right  = 'auto';
+        wrap.style.bottom = 'auto';
+      }
+    } catch {}
+
+    fab.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      isDragging = true;
+      wasDragged = false;
+      const rect = wrap.getBoundingClientRect();
+      dragStartX   = e.clientX;
+      dragStartY   = e.clientY;
+      wrapStartLeft = rect.left;
+      wrapStartTop  = rect.top;
+      fab.classList.add('dragging');
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+      if (Math.abs(dx) + Math.abs(dy) > 4) wasDragged = true;
+      if (!wasDragged) return;
+      const newLeft = Math.max(0, Math.min(wrapStartLeft + dx, window.innerWidth  - 60));
+      const newTop  = Math.max(0, Math.min(wrapStartTop  + dy, window.innerHeight - 60));
+      wrap.style.left   = newLeft + 'px';
+      wrap.style.top    = newTop  + 'px';
+      wrap.style.right  = 'auto';
+      wrap.style.bottom = 'auto';
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (!isDragging) return;
+      isDragging = false;
+      fab.classList.remove('dragging');
+      if (wasDragged) {
+        try {
+          localStorage.setItem('su-pos', JSON.stringify({
+            left: parseInt(wrap.style.left),
+            top:  parseInt(wrap.style.top),
+          }));
+        } catch {}
+      }
+    });
+
     // ─── Открыть / закрыть ─────────────────────────────────────────────────────
     function openPanel() {
       open = true;
@@ -244,7 +302,11 @@
       fab.classList.remove('active');
     }
 
-    fab.addEventListener('click', (e) => { e.stopPropagation(); open ? closePanel() : openPanel(); });
+    fab.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (wasDragged) { wasDragged = false; return; } // не открывать после перетаскивания
+      open ? closePanel() : openPanel();
+    });
     closeBtn.addEventListener('click', closePanel);
 
     document.addEventListener('click', (e) => {
